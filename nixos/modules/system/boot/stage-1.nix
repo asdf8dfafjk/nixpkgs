@@ -36,7 +36,7 @@ let
     set -euo pipefail
 
     declare -A seen
-    declare -a left
+    left=()
 
     patchelf="${pkgs.buildPackages.patchelf}/bin/patchelf"
 
@@ -48,7 +48,7 @@ let
       done
     }
 
-    add_needed $1
+    add_needed "$1"
 
     while [ ''${#left[@]} -ne 0 ]; do
       next=''${left[0]}
@@ -87,7 +87,9 @@ let
   # copy what we need.  Instead of using statically linked binaries,
   # we just copy what we need from Glibc and use patchelf to make it
   # work.
-  extraUtils = pkgs.runCommandCC "extra-utils"
+  extraUtils = let
+    # Use lvm2 without udev support, which is the same lvm2 we already have in the closure anyways
+    lvm2 = pkgs.lvm2.override { udev = null; }; in pkgs.runCommandCC "extra-utils"
     { nativeBuildInputs = [pkgs.buildPackages.nukeReferences];
       allowedReferences = [ "out" ]; # prevent accidents like glibc being included in the initrd
     }
@@ -111,8 +113,8 @@ let
       copy_bin_and_libs ${pkgs.utillinux}/sbin/blkid
 
       # Copy dmsetup and lvm.
-      copy_bin_and_libs ${pkgs.lvm2}/sbin/dmsetup
-      copy_bin_and_libs ${pkgs.lvm2}/sbin/lvm
+      copy_bin_and_libs ${getBin lvm2}/bin/dmsetup
+      copy_bin_and_libs ${getBin lvm2}/bin/lvm
 
       # Add RAID mdadm tool.
       copy_bin_and_libs ${pkgs.mdadm}/sbin/mdadm
@@ -235,7 +237,7 @@ let
             --replace cdrom_id ${extraUtils}/bin/cdrom_id \
             --replace ${pkgs.coreutils}/bin/basename ${extraUtils}/bin/basename \
             --replace ${pkgs.utillinux}/bin/blkid ${extraUtils}/bin/blkid \
-            --replace ${pkgs.lvm2}/sbin ${extraUtils}/bin \
+            --replace ${getBin pkgs.lvm2}/bin ${extraUtils}/bin \
             --replace ${pkgs.mdadm}/sbin ${extraUtils}/sbin \
             --replace ${pkgs.bash}/bin/sh ${extraUtils}/bin/sh \
             --replace ${udev} ${extraUtils}
@@ -374,7 +376,8 @@ let
           ) config.boot.initrd.secrets)
          }
 
-        (cd "$tmp" && find . | cpio -H newc -o) | gzip >>"$1"
+        (cd "$tmp" && find . -print0 | sort -z | cpio -o -H newc -R +0:+0 --reproducible --null) | \
+          ${config.boot.initrd.compressor} >> "$1"
       '';
 
 in
@@ -559,10 +562,12 @@ in
           default = false;
           type = types.bool;
           description = ''
-            If set, this file system will be mounted in the initial
-            ramdisk.  By default, this applies to the root file system
-            and to the file system containing
-            <filename>/nix/store</filename>.
+            If set, this file system will be mounted in the initial ramdisk.
+            Note that the file system will always be mounted in the initial
+            ramdisk if its mount point is one of the following:
+            ${concatStringsSep ", " (
+              forEach utils.pathsNeededForBoot (i: "<filename>${i}</filename>")
+            )}.
           '';
         };
       });

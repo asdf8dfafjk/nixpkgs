@@ -13,6 +13,8 @@ buildGoModule rec {
 
   vendorSha256 = null;
 
+  doCheck = false;
+
   buildFlagsArray = [
     "-ldflags=-X github.com/containernetworking/plugins/pkg/utils/buildversion.BuildVersion=${version}"
   ];
@@ -36,7 +38,7 @@ buildGoModule rec {
     "plugins/meta/tuning"
   ];
 
-  passthru.tests.podman = nixosTests.podman;
+  passthru.tests = { inherit (nixosTests) cri-o podman; };
 
   meta = with lib; {
     description = "Some standard networking plugins, maintained by the CNI team";

@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import unicodedata
 
 CHAR_TO_KEY = {
@@ -423,15 +424,18 @@ class Machine:
                 output += out
         return output
 
-    def fail(self, *commands: str) -> None:
+    def fail(self, *commands: str) -> str:
         """Execute each command and check that it fails."""
+        output = ""
         for command in commands:
             with self.nested("must fail: {}".format(command)):
-                status, output = self.execute(command)
+                (status, out) = self.execute(command)
                 if status == 0:
                     raise Exception(
                         "command `{}` unexpectedly succeeded".format(command)
                     )
+                output += out
+        return output
 
     def wait_until_succeeds(self, command: str) -> str:
         """Wait until a command returns success and return its output.
@@ -892,7 +896,8 @@ def run_tests() -> None:
             try:
                 exec(tests, globals())
             except Exception as e:
-                eprint("error: {}".format(str(e)))
+                eprint("error: ")
+                traceback.print_exc()
                 sys.exit(1)
     else:
         ptpython.repl.embed(locals(), globals())

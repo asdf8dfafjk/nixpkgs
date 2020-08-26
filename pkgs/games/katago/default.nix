@@ -13,51 +13,44 @@
 , opencl-headers ? null
 , ocl-icd ? null
 , gperftools ? null
+, eigen ? null
+, gpuEnabled ? true
+, useAVX2 ? false
 , cudaSupport ? false
 , useTcmalloc ? true}:
 
+assert !gpuEnabled -> (
+  eigen != null &&
+  !cudaSupport);
+
 assert cudaSupport -> (
-  libGL_driver != null && 
+  libGL_driver != null &&
   cudatoolkit != null &&
   cudnn != null);
 
 assert !cudaSupport -> (
-  opencl-headers != null &&
-  ocl-icd != null);
+  !gpuEnabled || (
+    opencl-headers != null &&
+    ocl-icd != null));
 
 assert useTcmalloc -> (
   gperftools != null);
 
 let
-  env = if cudaSupport 
+  env = if cudaSupport
     then gcc8Stdenv
     else stdenv;
 
 in env.mkDerivation rec {
   pname = "katago";
-  version = "1.4.4";
+  version = "1.6.0";
 
   src = fetchFromGitHub {
     owner = "lightvector";
     repo = "katago";
     rev = "v${version}";
-    sha256 = "14xs2bm8sky9cdsjdahjqs82q6blzcw05f5d9r1h171dm1hcx566";
+    sha256 = "1r84ws2rj7j8085v1cqffy9rg65rzrhk6z8jbxivqxsmsgs2zs48";
   };
-
-  # To workaround CMake 3.17.0's new buggy behavior wrt CUDA Compiler testing
-  # See the following tracking issues:
-  # KataGo:
-  #  - Issue #225: https://github.com/lightvector/KataGo/issues/225
-  #  - PR #227: https://github.com/lightvector/KataGo/pull/227
-  # CMake:
-  #  - Issue #20708: https://gitlab.kitware.com/cmake/cmake/-/issues/20708
-  patches = [
-    (fetchpatch {
-      name = "227.patch";
-      url = "https://patch-diff.githubusercontent.com/raw/lightvector/KataGo/pull/227.patch";
-      sha256 = "03f1vmdjhb79mpj95sijcwla8acy32clrjgrn4xqw5h90zdgj511";
-    })
-  ];
 
   nativeBuildInputs = [
     cmake
@@ -67,10 +60,12 @@ in env.mkDerivation rec {
   buildInputs = [
     libzip
     boost
-  ] ++ lib.optionals cudaSupport [
+  ] ++ lib.optionals (!gpuEnabled) [
+    eigen
+  ] ++ lib.optionals (gpuEnabled && cudaSupport) [
     cudnn
     libGL_driver
-  ] ++ lib.optionals (!cudaSupport) [
+  ] ++ lib.optionals (gpuEnabled && !cudaSupport) [
     opencl-headers
     ocl-icd
   ] ++ lib.optionals useTcmalloc [
@@ -79,9 +74,13 @@ in env.mkDerivation rec {
 
   cmakeFlags = [
     "-DNO_GIT_REVISION=ON"
-  ] ++ lib.optionals cudaSupport [
+  ] ++ lib.optionals (!gpuEnabled) [
+    "-DUSE_BACKEND=EIGEN"
+  ] ++ lib.optionals useAVX2 [
+    "-DUSE_AVX2=ON"
+  ] ++ lib.optionals (gpuEnabled && cudaSupport) [
     "-DUSE_BACKEND=CUDA"
-  ] ++ lib.optionals (!cudaSupport) [
+  ] ++ lib.optionals (gpuEnabled && !cudaSupport) [
     "-DUSE_BACKEND=OPENCL"
   ] ++ lib.optionals useTcmalloc [
     "-DUSE_TCMALLOC=ON"
